@@ -1,0 +1,94 @@
+SAMPLES = ["Diglossa_baritula_114568","Diglossa_baritula_77283"]
+
+rule all:
+    input:
+        "genome/hemoglobin_references.fasta.fai"
+
+rule fastp:
+    conda:
+        "envs/fastp.yml"
+    input:
+        r1="data/{sample}_R1_001.fastq.gz",
+        r2="data/{sample}_R2_001.fastq.gz"
+    output:
+        r1="results/clean/{sample}_R1.clean.fastq.gz",
+        r2="results/clean/{sample}_R2.clean.fastq.gz"
+    shell:
+        """
+        fastp \
+        -i {input.r1} -I {input.r2} \
+        -o {output.r1} -O {output.r2}
+        """
+
+rule index:
+    input:
+        "genome/hemoglobin_references.fasta"
+    output:
+        "genome/hemoglobin_references.fasta.fai"
+    conda:
+        "envs/align.yaml"
+    shell:
+        """
+        samtools faidx {input}
+        """
+
+rule align:
+    input:
+        "r1="results/clean/{sample}_R1.clean.fastq.gz",
+         r2="results/clean/{sample}_R2.clean.fastq.gz"
+    output:
+        "results/clean/{sample}.bam"
+    conda:
+        "envs/align.yaml"
+    shell:
+        """
+        bwa mem -t 4 hemoglobin_references.fasta {input.r1} {input.r2} > {output} 
+        """
+        
+rule bam_sort:
+    input:
+        "results/clean/{sample}.bam"
+    output:
+        "results/clean/{sample}.sorted.bam
+    conda:
+        "envs/bcftools.yaml"
+    shell:
+        """
+        samtools sort -o {output}
+        """
+        
+rule bam_index:
+    input:
+        "results/clean/{sample}.sorted.bam"
+    output:
+        "results/clean/{sample}.sorted.bam.bai"
+    conda:
+        "envs/bcftools.yaml"
+    shell:
+        """
+        samtools index {input}
+        """
+        
+rule variant_call:
+    input:
+        "results/clean/{sample}.sorted.bam.bai"
+    output:
+        "results/clean/Diglossa_baritula.multisample.vcf"
+    conda:
+        "envs/bcftools.yaml"
+    shell:
+        """
+        bcftools mpileup -f genome/hemoglobin_references.fasta /results/clean/*.sorted.bam | bcftools call -m - > {output}
+        """
+
+rule filter:
+    input:
+        ""results/clean/Diglossa_baritula.multisample.vcf"
+    output:
+        ""results/clean/Diglossa_baritula.filtered.multisample.recode.vcf
+    conda:
+        "envs/vcftools.yaml"
+    shell:
+        """
+        vcftools --vcf {input} --minQ 40 --recode --out Diglossa_baritula.filtered.multisample
+        """
